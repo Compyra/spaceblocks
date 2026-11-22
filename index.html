@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
+  <title>House of Cards — Topple the Towers</title>
+  <link rel="icon" href="data:," />
+  <link rel="stylesheet" href="css/style.css?v=4" />
+</head>
+<body>
+  <canvas id="game"></canvas>
+
+  <div id="hud">
+    <div id="hud-left">
+      <div id="level-name">House of Cards</div>
+      <div id="level-sub">Level 1 / 10</div>
+    </div>
+    <div id="hud-mid">
+      <div class="stat"><span id="shots">0</span><span class="label">Shots</span></div>
+      <div class="stat"><span id="par">0</span><span class="label">Par</span></div>
+      <div class="stat"><span id="blocks">0</span><span class="label">Blocks</span></div>
+    </div>
+    <div id="hud-right">
+      <button id="btn-restart" class="btn" title="Restart level (R)">Restart</button>
+      <button id="btn-levels" class="btn" title="Level select">Levels</button>
+      <button id="btn-sound" class="btn" title="Toggle sound (M)">Sound On</button>
+    </div>
+  </div>
+
+  <div id="hint">Drag anywhere to aim, release to fire &mdash; get every block into the glowing plasma. Hard hits shatter blocks, glass breaks easily. Keys 1&ndash;4 switch balls.</div>
+
+  <div id="ball-bar"></div>
+  <div id="chapter-banner" class="hidden"></div>
+
+  <div id="modal" class="overlay hidden">
+    <div class="card">
+      <h1 id="modal-title">TOWER DOWN</h1>
+      <div id="modal-stars"></div>
+      <div id="modal-unlock" class="hidden"></div>
+      <p id="modal-sub"></p>
+      <div class="row">
+        <button id="btn-replay" class="btn">Replay</button>
+        <button id="btn-next" class="btn primary">Next Level</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="levels-overlay" class="overlay hidden">
+    <div class="card">
+      <h1>LEVELS</h1>
+      <div id="levels-grid"></div>
+      <div class="row"><button id="btn-close-levels" class="btn">Close</button></div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/matter-js@0.20.0/build/matter.min.js"></script>
+  <script src="js/audio.js?v=4"></script>
+  <script src="js/particles.js?v=4"></script>
+  <script src="js/levels.js?v=4"></script>
+  <script src="js/game.js?v=4"></script>
+</body>
+</html>
