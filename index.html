@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
   <title>House of Cards — Topple the Towers</title>
   <link rel="icon" href="data:," />
-  <link rel="stylesheet" href="css/style.css?v=4" />
+  <link rel="stylesheet" href="css/style.css?v=5" />
 </head>
 <body>
   <canvas id="game"></canvas>
@@ -45,6 +45,24 @@
     </div>
   </div>
 
+  <div id="start-overlay" class="overlay hidden">
+    <div class="card start-card">
+      <div class="start-kicker">A SPACE DEMOLITION PUZZLE</div>
+      <h1>HOUSE OF CARDS</h1>
+      <div id="start-progress">
+        <div class="sp-row">
+          <span id="sp-levels">0 / 20 levels</span>
+          <span id="sp-stars">&#9733; 0 / 60</span>
+        </div>
+        <div class="sp-bar"><div id="sp-fill"></div></div>
+      </div>
+      <div id="start-grid"></div>
+      <div class="row">
+        <button id="btn-start" class="btn primary">Continue</button>
+      </div>
+    </div>
+  </div>
+
   <div id="levels-overlay" class="overlay hidden">
     <div class="card">
       <h1>LEVELS</h1>
@@ -54,9 +72,9 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/matter-js@0.20.0/build/matter.min.js"></script>
-  <script src="js/audio.js?v=4"></script>
-  <script src="js/particles.js?v=4"></script>
-  <script src="js/levels.js?v=4"></script>
-  <script src="js/game.js?v=4"></script>
+  <script src="js/audio.js?v=5"></script>
+  <script src="js/particles.js?v=5"></script>
+  <script src="js/levels.js?v=5"></script>
+  <script src="js/game.js?v=5"></script>
 </body>
 </html>

@@ -138,6 +138,12 @@
     modalUnlock: document.getElementById('modal-unlock'),
     ballBar: document.getElementById('ball-bar'),
     banner: document.getElementById('chapter-banner'),
+    startOverlay: document.getElementById('start-overlay'),
+    startGrid: document.getElementById('start-grid'),
+    spLevels: document.getElementById('sp-levels'),
+    spStars: document.getElementById('sp-stars'),
+    spFill: document.getElementById('sp-fill'),
+    btnStart: document.getElementById('btn-start'),
   };
 
   function updateHUD() {
@@ -151,11 +157,14 @@
   }
 
   const overlayOpen = () =>
-    !el.modal.classList.contains('hidden') || !el.levelsOverlay.classList.contains('hidden');
+    !el.modal.classList.contains('hidden') ||
+    !el.levelsOverlay.classList.contains('hidden') ||
+    !el.startOverlay.classList.contains('hidden');
 
   function hideOverlays() {
     el.modal.classList.add('hidden');
     el.levelsOverlay.classList.add('hidden');
+    el.startOverlay.classList.add('hidden');
   }
 
   // ---------- level lifecycle ----------
@@ -212,7 +221,9 @@
           frictionStatic: 1,
           restitution: m.restitution,
           frictionAir: mode.blockAir,
-          sleepThreshold: mode.sleep ? 35 : Infinity,
+          // Default Matter threshold; lower values made slow-toppling blocks
+          // fall asleep in mid-motion ("stops falling halfway").
+          sleepThreshold: mode.sleep ? 60 : Infinity,
         };
         const hoc = { type: 'block', mat: it.mat, color: colorFor(ci++, it.mat) };
         let b;
@@ -328,13 +339,71 @@
     }
   }
 
-  // Wake sleeping blocks near a removed body so nothing is left floating.
+  // Wake sleeping blocks near a removed body, then chain-wake any sleeping block
+  // touching a woken one. Without the chain, blocks high up a tall tower stayed
+  // asleep (floating) when their support was destroyed below.
   function wakeNear(x, y, r) {
+    const woken = [];
     for (const b of blocks) {
       if (!b.isSleeping) continue;
       const dx = b.position.x - x;
       const dy = b.position.y - y;
-      if (dx * dx + dy * dy < r * r) Sleeping.set(b, false);
+      if (dx * dx + dy * dy < r * r) {
+        Sleeping.set(b, false);
+        woken.push(b);
+      }
+    }
+    for (let i = 0; i < woken.length; i++) {
+      const w = woken[i].bounds;
+      for (const b of blocks) {
+        if (!b.isSleeping) continue;
+        const bb = b.bounds;
+        if (w.min.x - 6 < bb.max.x && w.max.x + 6 > bb.min.x &&
+            w.min.y - 6 < bb.max.y && w.max.y + 6 > bb.min.y) {
+          Sleeping.set(b, false);
+          woken.push(b);
+        }
+      }
+    }
+  }
+
+  // Safety net: wake any sleeping block that has nothing beneath it in the
+  // gravity direction, so nothing ever hangs frozen in mid-air.
+  function wakeUnsupported() {
+    const gx = engine.gravity.x;
+    const gy = engine.gravity.y;
+    if (!gx && !gy) return;
+    for (const b of blocks) {
+      if (!b.isSleeping) continue;
+      // Probe box: the block's AABB nudged 4px along gravity, shrunk slightly
+      // perpendicular to it so side-by-side neighbours don't count as support.
+      const sx = gx * 4;
+      const sy = gy * 4;
+      const px = gy !== 0 ? 3 : 0;
+      const py = gx !== 0 ? 3 : 0;
+      const minX = b.bounds.min.x + sx + px;
+      const maxX = b.bounds.max.x + sx - px;
+      const minY = b.bounds.min.y + sy + py;
+      const maxY = b.bounds.max.y + sy - py;
+      let supported = false;
+      for (const o of statics) {
+        const ob = o.bounds;
+        if (minX < ob.max.x && maxX > ob.min.x && minY < ob.max.y && maxY > ob.min.y) {
+          supported = true;
+          break;
+        }
+      }
+      if (!supported) {
+        for (const o of blocks) {
+          if (o === b) continue;
+          const ob = o.bounds;
+          if (minX < ob.max.x && maxX > ob.min.x && minY < ob.max.y && maxY > ob.min.y) {
+            supported = true;
+            break;
+          }
+        }
+      }
+      if (!supported) Sleeping.set(b, false);
     }
   }
 
@@ -472,10 +541,18 @@
   }
 
   // ---------- simulation step ----------
+  let supportTick = 0;
+
   function physicsStep() {
     Engine.update(engine, STEP);
 
     while (explodeQueue.length) explode(explodeQueue.shift());
+
+    // Periodically make sure no sleeping block is left hanging in mid-air.
+    if (mode.sleep && settling === 0) {
+      supportTick = (supportTick + 1) % 10;
+      if (supportTick === 0) wakeUnsupported();
+    }
 
     if (settling > 0) {
       settling--;
@@ -619,14 +696,23 @@
   }
 
   // ---------- level select ----------
-  function openLevels() {
-    el.levelsGrid.innerHTML = '';
+  const MODE_TAG = {
+    'side-down': 'GRAVITY \u2193',
+    'void': 'ZERO-G',
+    'deck': 'TOP-DOWN',
+    'side-up': 'GRAVITY \u2191',
+    'side-right': 'GRAVITY \u2192',
+  };
+
+  function buildLevelsGrid(container, fromStart) {
+    container.innerHTML = '';
     let gi = 0;
     CHAPTERS.forEach((ch, ci) => {
       const head = document.createElement('div');
       head.className = 'ch-title';
-      head.innerHTML = `<b>CH ${ci + 1}</b> ${ch.name}`;
-      el.levelsGrid.appendChild(head);
+      head.innerHTML =
+        `<b>CH ${ci + 1}</b> ${ch.name}<span class="ch-grav">${MODE_TAG[ch.mode]}</span>`;
+      container.appendChild(head);
       const rowEl = document.createElement('div');
       rowEl.className = 'ch-tiles';
       ch.levels.forEach((def, li) => {
@@ -646,13 +732,45 @@
         tile.addEventListener('click', () => {
           Sound.click();
           loadLevel(i);
+          // Coming from the start page, always re-show the chapter gravity banner.
+          if (fromStart) showBanner(LEVELS[levelIndex].chapter);
         });
         rowEl.appendChild(tile);
       });
-      el.levelsGrid.appendChild(rowEl);
+      container.appendChild(rowEl);
     });
+  }
+
+  function openLevels() {
+    buildLevelsGrid(el.levelsGrid, false);
     el.modal.classList.add('hidden');
     el.levelsOverlay.classList.remove('hidden');
+  }
+
+  // ---------- start page ----------
+  function progressStats() {
+    let stars = 0;
+    let cleared = 0;
+    for (let i = 0; i < LEVELS.length; i++) {
+      const b = save.best[String(i)];
+      if (b) {
+        cleared++;
+        stars += b.stars;
+      }
+    }
+    return { stars, cleared, total: LEVELS.length, maxStars: LEVELS.length * 3 };
+  }
+
+  function openStart() {
+    const st = progressStats();
+    el.spLevels.textContent = `${st.cleared} / ${st.total} LEVELS CLEARED`;
+    el.spStars.textContent = `\u2605 ${st.stars} / ${st.maxStars}`;
+    el.spFill.style.width = (st.maxStars ? (100 * st.stars) / st.maxStars : 0) + '%';
+    el.btnStart.textContent = st.cleared === 0 ? 'Start Game' : 'Continue';
+    buildLevelsGrid(el.startGrid, true);
+    el.modal.classList.add('hidden');
+    el.levelsOverlay.classList.add('hidden');
+    el.startOverlay.classList.remove('hidden');
   }
 
   // ---------- ball selection ----------
@@ -730,6 +848,10 @@
       toggleSound();
     } else if (e.key === 'Escape') {
       el.levelsOverlay.classList.add('hidden');
+      if (!el.startOverlay.classList.contains('hidden')) {
+        el.startOverlay.classList.add('hidden');
+        showBanner(LEVELS[levelIndex].chapter);
+      }
     } else if ((e.key === 'n' || e.key === 'N' || e.key === 'Enter') && !el.modal.classList.contains('hidden')) {
       nextFromModal();
     } else if (e.key >= '1' && e.key <= String(BALL_ORDER.length)) {
@@ -759,6 +881,11 @@
     loadLevel(levelIndex);
   });
   document.getElementById('btn-next').addEventListener('click', nextFromModal);
+  el.btnStart.addEventListener('click', () => {
+    Sound.click();
+    el.startOverlay.classList.add('hidden');
+    showBanner(LEVELS[levelIndex].chapter);
+  });
 
   const soundBtn = document.getElementById('btn-sound');
   function toggleSound() {
@@ -1172,6 +1299,75 @@
     }
   }
 
+  // ---------- gravity field background ----------
+  // Ambient motes that make the gravity field readable at a glance: they stream
+  // along the gravity vector, or float freely when there is no gravity.
+  const FIELD_MOTES = Array.from({ length: 56 }, () => ({
+    x: Math.random() * W,
+    y: Math.random() * H,
+    s: 0.5 + Math.random(),
+    ph: Math.random() * Math.PI * 2,
+  }));
+
+  function drawGravityField(tSec) {
+    const gx = mode.gravity.x;
+    const gy = mode.gravity.y;
+    ctx.save();
+    if (gx || gy) {
+      // streaks of dust falling with gravity
+      ctx.strokeStyle = '#7af7ff';
+      ctx.lineCap = 'round';
+      ctx.lineWidth = 1.4;
+      for (const m of FIELD_MOTES) {
+        const d = tSec * 60 * m.s;
+        const x = (((m.x + gx * d) % W) + W) % W;
+        const y = (((m.y + gy * d) % H) + H) % H;
+        const len = 10 + 14 * m.s;
+        ctx.globalAlpha = 0.05 + 0.06 * m.s;
+        ctx.beginPath();
+        ctx.moveTo(x - gx * len, y - gy * len);
+        ctx.lineTo(x, y);
+        ctx.stroke();
+      }
+      // faint chevron wave travelling in the gravity direction
+      const ang = Math.atan2(gy, gx);
+      const SP = 230;
+      ctx.lineWidth = 3;
+      for (let yy = SP / 2; yy < H; yy += SP) {
+        for (let xx = SP / 2; xx < W; xx += SP) {
+          const along = xx * gx + yy * gy;
+          const wave = 0.5 + 0.5 * Math.sin((along - tSec * 130) * 0.012);
+          ctx.globalAlpha = 0.03 + 0.09 * wave;
+          ctx.save();
+          ctx.translate(xx, yy);
+          ctx.rotate(ang);
+          ctx.beginPath();
+          ctx.moveTo(-9, -14);
+          ctx.lineTo(5, 0);
+          ctx.lineTo(-9, 14);
+          ctx.moveTo(-23, -14);
+          ctx.lineTo(-9, 0);
+          ctx.lineTo(-23, 14);
+          ctx.stroke();
+          ctx.restore();
+        }
+      }
+    } else {
+      // zero gravity: dust drifts aimlessly in tiny loops
+      ctx.fillStyle = '#9fd8ff';
+      for (const m of FIELD_MOTES) {
+        const x = m.x + Math.cos(tSec * 0.3 * m.s + m.ph) * 16;
+        const y = m.y + Math.sin(tSec * 0.24 * m.s + m.ph) * 16;
+        ctx.globalAlpha = 0.07 + 0.05 * Math.sin(tSec * m.s + m.ph);
+        ctx.beginPath();
+        ctx.arc(x, y, 1.1 + m.s, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+    ctx.restore();
+    ctx.globalAlpha = 1;
+  }
+
   function render(tSec) {
     // letterbox background
     ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -1203,6 +1399,7 @@
     }
     ctx.globalAlpha = 1;
     drawSpace(CH_THEMES[LEVELS[levelIndex].chapter]);
+    drawGravityField(tSec);
 
     for (const b of statics) drawStatic(b);
     drawKillZone(tSec);
@@ -1304,6 +1501,9 @@
   }
 
   // ---------- start ----------
-  loadLevel(Math.min(save.unlocked, LEVELS.length) - 1);
+  const firstIndex = Math.min(save.unlocked, LEVELS.length) - 1;
+  bannerChapter = LEVELS[firstIndex].chapter; // suppress the banner behind the start page
+  loadLevel(firstIndex);
+  openStart();
   requestAnimationFrame(frame);
 })();
